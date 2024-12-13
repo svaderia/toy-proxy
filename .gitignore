@@ -1,2 +1,4 @@
 proxy
 proxy2
+core
+*.o
