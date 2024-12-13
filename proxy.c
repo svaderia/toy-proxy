@@ -235,10 +235,10 @@ static void release_server(struct server_conn *srv) {
 }
 
 static void bufferevent_wrote(struct bufferevent *bev, const void *msg, size_t len) {
-    printf("BUFFEREVENT WRITE!!\n");
-    log_hex_data(msg, len);
-    log_text_data("", msg, len);
-    printf("END BUFFEREVENT WRITE\n");
+    // printf("BUFFEREVENT WRITE!!\n");
+    // log_hex_data(msg, len);
+    // log_text_data("", msg, len);
+    // printf("END BUFFEREVENT WRITE\n");
     bufferevent_write(bev, msg, len);
 }
 
@@ -629,8 +629,6 @@ static void client_read_cb(struct bufferevent *bev, void *arg) {
     struct server_conn *srv = client->assigned_server;
 
 
-    printf("char type %d\n", (int) msg_type);
-
     // screw it, pray that we got enough bytes if init message
     while (len >= 5) {
         // Verify full buffer arrival
@@ -816,34 +814,17 @@ static void initialize_server_conn(struct server_conn *srv, struct client_conn *
         assert(false);
     }
 
-    struct startup_msg curr_msg;
-
-    switch (srv->init_status) {
-        case STARTUP_SERVER:
-            curr_msg = client_startup_message;
-            // Early set, but hopefully ok
-            srv->init_status = P_1;
-            break;
-        case P_1:
-            curr_msg = client_pw_msg_1;
-            srv->init_status = P_2;
-            break;
-        case P_2:
-            curr_msg = client_pw_msg_1;
-            // Is len guaranteed to be 5?
-            if (msg_type == 'Z' && msg_len == 5) {
-                srv->init_status = COMPLETE_SERVER;
-                log_info("Server completed single alloc sequence");
-
-                global_startup_status = COMPLETE_STARTUP_GLOBAL;
-            }
-            break;
-        default:
-            log_info("initialize server called on initialized server");
-            exit(-1);
-            break;
+    if (srv->init_status == COMPLETE_SERVER) {
+        log_info("initialize server called on initialized server");
+        assert(false);
     }
-    bufferevent_wrote(srv->bev, curr_msg.msg, curr_msg.len);
+    
+    if (msg_type == 'Z' && msg_len == 5) {
+        srv->init_status = COMPLETE_SERVER;
+        log_info("Server completed single alloc sequence");
+    }
+
+    bufferevent_wrote(client->bev, data, msg_buflen);
     evbuffer_drain(input, msg_buflen);
 }
 
@@ -864,9 +845,11 @@ static void handle_server_read(struct server_conn *srv, struct client_conn *clie
 
         // Log message content
         unsigned char *full_msg = evbuffer_pullup(input, msg_len+1);
+        log_debug("Server msg received: type=%c length=%d", msg_type, msg_len);
+
         log_debug("Server message content: %s", full_msg);
 
-        if (msg_type == 'C' || msg_type == 'E' || msg_type == 'N') {
+        if (msg_type == 'C' || msg_type == 'E' || msg_type == 'N' || msg_type == 'R') {
             // These are textual messages that end with '\0'
             const char *text = (const char*)(full_msg+5);
             size_t tlen = msg_len+1 - 5;
