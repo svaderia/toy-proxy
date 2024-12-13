@@ -84,11 +84,11 @@ struct startup_msg {
 };
 
 enum client_startup_step {
-    STARTUP_CLIENT, R_1, R_2, COMPLETE_CLIENT
+    STARTUP_CLIENT, R, COMPLETE_CLIENT
 };
 
 enum server_startup_step {
-    STARTUP_SERVER, P_1, P_2, COMPLETE_SERVER
+    STARTUP_SERVER, P, COMPLETE_SERVER
 };
 
 // Shitty queue
@@ -134,10 +134,6 @@ struct startup_msg client_startup_message;
 // first 'R' message
 struct startup_msg server_auth_msg_1;
 // first 'p' message
-struct startup_msg client_pw_msg_1;
-// second 'R' message
-struct startup_msg server_auth_msg_2;
-// second 'p' message
 struct startup_msg client_pw_msg_2;
 // everything else until and including 'ready for query'
 struct message_list server_parameter_list = {NULL, NULL};
@@ -235,10 +231,10 @@ static void release_server(struct server_conn *srv) {
 }
 
 static void bufferevent_wrote(struct bufferevent *bev, const void *msg, size_t len) {
-    // printf("BUFFEREVENT WRITE!!\n");
-    // log_hex_data(msg, len);
-    // log_text_data("", msg, len);
-    // printf("END BUFFEREVENT WRITE\n");
+    printf("BUFFEREVENT WRITE!!\n");
+    log_hex_data(msg, len);
+    log_text_data("", msg, len);
+    printf("END BUFFEREVENT WRITE\n");
     bufferevent_write(bev, msg, len);
 }
 
@@ -537,15 +533,10 @@ static void first_initialize_client_conn(struct server_conn *srv, struct client_
         case STARTUP_CLIENT:
             client_startup_message.msg = msgcpy;
             client_startup_message.len = msg_buflen;
-            client->init_status = R_1;
+            client->init_status = R;
             global_startup_status = IN_PROGRESS_STARTUP_GLOBAL;
             break;
-        case R_1:
-            client_pw_msg_1.msg = msgcpy;
-            client_pw_msg_1.len = msg_buflen;
-            client->init_status = R_2;
-            break;
-        case R_2:
+        case R:
             client_pw_msg_2.msg = msgcpy;
             client_pw_msg_2.len = msg_buflen;
             // Hopefully client does not spam before getting ack
@@ -585,14 +576,10 @@ static void initialize_client_conn(struct server_conn *srv, struct client_conn *
 
     switch (client->init_status) {
         case STARTUP_CLIENT:
-            client->init_status = R_1;
+            client->init_status = R;
             bufferevent_wrote(client->bev, server_auth_msg_1.msg, server_auth_msg_1.len);
             break;
-        case R_1:
-            client->init_status = R_2;
-            bufferevent_wrote(client->bev, server_auth_msg_2.msg, server_auth_msg_2.len);
-            break;
-        case R_2:
+        case R:
             struct message_list_node *curr_node = server_parameter_list.head;
             while(curr_node != NULL) {
                 bufferevent_wrote(client->bev, curr_node->msg.msg, curr_node->msg.len);
@@ -610,7 +597,6 @@ static void initialize_client_conn(struct server_conn *srv, struct client_conn *
     evbuffer_drain(input, msg_buflen);
 }
 
-        
 
 static void client_read_cb(struct bufferevent *bev, void *arg) {
     struct client_conn *client = arg;
@@ -768,14 +754,9 @@ static void first_initialize_server_conn(struct server_conn *srv, struct client_
             server_auth_msg_1.msg = msgcpy;
             server_auth_msg_1.len = msg_buflen;
             // Early set, but hopefully ok
-            srv->init_status = P_1;
+            srv->init_status = P;
             break;
-        case P_1:
-            server_auth_msg_2.msg = msgcpy;
-            server_auth_msg_2.len = msg_buflen;
-            srv->init_status = P_2;
-            break;
-        case P_2:
+        case P:
             struct message_list_node *node = malloc(sizeof(struct message_list_node));
             message_list_node_init(node, msgcpy, msg_len);
             message_list_insert(&server_parameter_list, node);
@@ -849,7 +830,7 @@ static void handle_server_read(struct server_conn *srv, struct client_conn *clie
 
         log_debug("Server message content: %s", full_msg);
 
-        if (msg_type == 'C' || msg_type == 'E' || msg_type == 'N' || msg_type == 'R') {
+        if (msg_type == 'C' || msg_type == 'E' || msg_type == 'N') {
             // These are textual messages that end with '\0'
             const char *text = (const char*)(full_msg+5);
             size_t tlen = msg_len+1 - 5;
